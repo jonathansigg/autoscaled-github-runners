@@ -1,0 +1,22 @@
+{
+	"display": "Node LTS",
+	"_version": "22.0.0",
+	"compilerOptions": {
+		"lib": ["es2023"],
+		"outDir": "dist",
+		"module": "ESNext",
+		"target": "es2022",
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"noImplicitAny": false,
+		"strictBindCallApply": false,
+		"noFallthroughCasesInSwitch": false,
+		"moduleResolution": "node",
+		"rootDir": "./src"
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "dist"]
+}
