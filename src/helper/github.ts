@@ -1,8 +1,9 @@
 import { Octokit } from '@octokit/rest';
+import axios from 'axios';
 import fetch from 'node-fetch';
-import { createWriteStream } from 'node:fs';
-import https from 'node:https';
+import { mkdirSync } from 'node:fs';
 import os from 'node:os';
+import { x } from 'tar';
 import { checkAndCreateDir } from './utils.js';
 
 const fallbackVersion = '2.316.0'; // Fallback version if latest version cannot be fetched
@@ -27,7 +28,7 @@ export const getLatestRunnerVersion = async (): Promise<string> => {
 	return json.tag_name.replace(/^v/, ''); // e.g. v2.316.0 → 2.316.0
 };
 
-export const getDownloadUrl = (version: string): { url: string; file: string } => {
+export const getDownloadUrl = (version: string): string => {
 	const platform = os.platform();
 	const arch = os.arch();
 
@@ -46,30 +47,37 @@ export const getDownloadUrl = (version: string): { url: string; file: string } =
 	const file = `actions-runner-${osName}-${archName}-${version}.${fileExt}`;
 	const url = `https://github.com/actions/runner/releases/download/v${version}/${file}`;
 
-	return { url, file };
+	return url;
 };
 
 export const downloadRunner = async (
-	url: string,
+	version: string,
 	dest: string,
-	runnerFile: string,
-): Promise<void> => {
+): Promise<{ download: boolean }> => {
+	const extractDir = `${dest}/runner-v${version}`;
+	const url = getDownloadUrl(version);
+	const exists = await checkAndCreateDir(extractDir);
+
+	if (exists) {
+		return new Promise((resolve) => resolve({ download: false }));
+	}
+
+	mkdirSync(extractDir, { recursive: true });
+
+	const response = await axios({
+		method: 'get',
+		url,
+		responseType: 'stream',
+	});
+
 	return new Promise((resolve, reject) => {
-		checkAndCreateDir(dest).then(() => {
-			const file = createWriteStream(`${dest}/${runnerFile}`);
-			https.get(url, (response) => {
-				response.pipe(file);
-
-				file.on('finish', () => {
-					file.close();
-					resolve();
-				});
-
-				response.on('error', (err) => {
-					file.close();
-					reject(err);
-				});
+		response.data
+			.pipe(x({ cwd: extractDir }))
+			.on('finish', () => {
+				resolve({ download: false });
+			})
+			.on('error', (err: unknown) => {
+				reject(err);
 			});
-		});
 	});
 };

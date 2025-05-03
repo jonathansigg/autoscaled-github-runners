@@ -3,7 +3,7 @@ import type { Command } from 'commander';
 import { createSpinner } from 'nanospinner';
 import path from 'node:path';
 import { saveConfig } from '../helper/config.js';
-import { downloadRunner, getDownloadUrl, getLatestRunnerVersion } from '../helper/github.js';
+import { downloadRunner, getLatestRunnerVersion } from '../helper/github.js';
 import { breakLine, error, info, message } from '../helper/message.js';
 import type { Config } from '../types/config.js';
 
@@ -65,20 +65,16 @@ export const loadSetupCommands = (program: Command) => {
 			const spinner = createSpinner('Download runner from github').start();
 			message('\n');
 			const runnerVersion = config?.runnerVersion ?? (await getLatestRunnerVersion());
-			console.log(runnerVersion);
-
-			const { url: runnerDownloadUrl, file: runnerFile } = getDownloadUrl(runnerVersion);
-			spinner.info(`Downloading GitHub Actions Runner version ${runnerVersion}`);
-			console.log(runnerDownloadUrl, runnerFile);
+			spinner.stop();
 
 			try {
-				await downloadRunner(runnerDownloadUrl, `${runnerPath}/downloads/`, runnerFile);
-				spinner.success('Runner downloaded successfully.');
+				await downloadRunner(runnerVersion, `${runnerPath}/downloads`);
+				// spinner.success('Runner downloaded successfully.');
 			} catch (err) {
-				spinner.clear();
-				error(err instanceof Error ? err.message : 'An unknown error occurred.');
+				spinner.stop();
+				throw error(err instanceof Error ? err.message : 'An unknown error occurred.');
 			}
 
-			spinner.clear();
+			spinner.stop();
 		});
 };

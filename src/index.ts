@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { loadRunnerCommands } from './commands/runner.js';
 import { loadSetupCommands } from './commands/setup.js';
 import { loadConfig } from './helper/config.js';
 const program = new Command();
@@ -11,6 +12,7 @@ loadConfig().then((config) => {
 		.setOptionValue('config', config);
 
 	loadSetupCommands(program);
+	loadRunnerCommands(program);
 
 	program.parse(process.argv);
 });

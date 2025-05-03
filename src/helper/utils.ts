@@ -1,15 +1,22 @@
+import { copy } from 'fs-extra';
 import { mkdirp } from 'mkdirp';
-import { readdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { message } from './message.js';
+import { existsSync } from 'node:fs';
 
 export const checkAndCreateDir = async (dirPath: string) => {
-	try {
-		readdirSync(dirname(dirPath), {
-			recursive: true,
-		});
-	} catch {
-		message(`Creating missing directory: ${dirPath}`);
-		await mkdirp(dirPath);
+	if (existsSync(dirPath)) {
+		return true;
 	}
+
+	await mkdirp(dirPath);
+	return false;
+};
+
+export const copyDir = async (srcDir: string, destDir: string) => {
+	if (!existsSync(srcDir)) {
+		throw new Error(`Source directory does not exist: ${srcDir}`);
+	}
+
+	copy(srcDir, destDir, { overwrite: true }, (err) => {
+		if (err) throw new Error(`Error moving directory: ${err.message}`);
+	});
 };
