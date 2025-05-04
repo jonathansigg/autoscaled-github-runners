@@ -2,9 +2,10 @@ import { input, number } from '@inquirer/prompts';
 import type { Command } from 'commander';
 import { createSpinner } from 'nanospinner';
 import path from 'node:path';
-import { getConfig, saveConfig } from '../helper/config.js';
+import { saveConfig } from '../helper/config.js';
 import { downloadRunner, getLatestRunnerVersion } from '../helper/github.js';
 import { breakLine, error, info, message } from '../helper/message.js';
+import type { Config } from '../types/config.js';
 
 export const loadSetupCommands = (program: Command) => {
 	program
@@ -16,7 +17,7 @@ export const loadSetupCommands = (program: Command) => {
 		.option('--max-runners, -m <maxRunners>', 'Maximum number of runners')
 		.option('--runner-version, -v <runnerVersion>', 'Runner version')
 		.action(async (options) => {
-			const config = getConfig(program);
+			const config = program.getOptionValue('config') as Config;
 
 			// set default values
 			const defaults = {
@@ -34,6 +35,8 @@ export const loadSetupCommands = (program: Command) => {
 			info('This will help you configure the application.');
 
 			let { runnerPath, token } = defaults;
+
+			let runnerVersion = defaults.runnerVersion;
 
 			if (!options?.skipConfig) {
 				if (!options?.token) {
@@ -83,7 +86,7 @@ export const loadSetupCommands = (program: Command) => {
 				}
 
 				if (!options?.runnerVersion) {
-					const runnerVersion = await input({
+					runnerVersion = await input({
 						message: 'Enter the runner version',
 						default: defaults.runnerVersion,
 					});
@@ -105,7 +108,7 @@ export const loadSetupCommands = (program: Command) => {
 			spinner.stop();
 
 			try {
-				await downloadRunner(config?.runnerVersion, `${runnerPath}/downloads`);
+				await downloadRunner(runnerVersion, `${runnerPath}/downloads`);
 			} catch (err) {
 				spinner.stop();
 				throw error(err instanceof Error ? err.message : 'An unknown error occurred.');
