@@ -4,6 +4,7 @@ export type Config = {
 	runnerVersion?: string;
 	repos?: string[];
 	maxRunners?: number;
+	cron?: string;
 };
 
 export type ConfigSetOptions = {

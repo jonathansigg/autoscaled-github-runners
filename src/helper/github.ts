@@ -1,15 +1,18 @@
-import { confirm, select } from '@inquirer/prompts';
+import { confirm, input, select } from '@inquirer/prompts';
 import { Octokit } from '@octokit/rest';
 import AdmZip from 'adm-zip';
 import axios from 'axios';
 import fs from 'fs-extra';
 import { createSpinner } from 'nanospinner';
 import fetch from 'node-fetch';
+import { exec } from 'node:child_process';
+import { error } from 'node:console';
 import { mkdirSync } from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
+import path, { normalize } from 'node:path';
 import { x } from 'tar';
-import { checkAndCreateDir, getArchName, getOsName } from './utils.js';
+import type { ConfigRequired } from '../types/config.js';
+import { checkAndCreateDir, copyDir, getArchName, getOsName } from './utils.js';
 
 const fallbackVersion = '2.316.0'; // Fallback version if latest version cannot be fetched
 
@@ -120,5 +123,87 @@ export const selectRepo = async (options: { repos?: string[]; token?: string }) 
 			name: repo,
 			value: repo,
 		})),
+	});
+};
+
+export const startRunner = async (
+	config: ConfigRequired,
+	options?: { repo?: string; name?: string; labels?: string },
+) => {
+	const { runnerPath, repos, token } = config;
+	const runnerVersion = config?.runnerVersion ?? (await getLatestRunnerVersion());
+	const selectedRepo =
+		options?.repo ??
+		(await select({
+			message: 'Select a repository to start a runner',
+			pageSize: 10,
+			choices: repos.map((repo) => ({
+				name: repo,
+				value: repo,
+			})),
+		}));
+	const runnerName =
+		options?.name ??
+		(await input({
+			message: 'Enter the name of the runner',
+			default: `${getOsName()}-${getArchName()}`,
+			validate: (input) => {
+				if (input.length < 1) {
+					return 'Runner name cannot be empty.';
+				}
+				if (input.includes(' ')) {
+					return 'Runner name cannot contain spaces.';
+				}
+				return true;
+			},
+		}));
+
+	const runnerLabels =
+		options?.labels ??
+		(await input({
+			message: 'Enter the labels of the runner',
+			default: `${getOsName()}-${getArchName()}`,
+			validate: (input) => {
+				if (input.length < 1) {
+					return 'Runner labels cannot be empty.';
+				}
+				if (input.includes(' ')) {
+					return 'Runner labels cannot contain spaces.';
+				}
+				return true;
+			},
+		}));
+	const repoRunnerPath = normalize(`${runnerPath}/${selectedRepo}/${runnerName}`);
+	const runnerDownloadPath = normalize(`${runnerPath}/downloads`);
+	const runnerDownloadDir = normalize(`${runnerDownloadPath}/runner-v${runnerVersion}`);
+
+	if (fs.existsSync(repoRunnerPath)) {
+		return;
+	}
+
+	copyDir(runnerDownloadDir, repoRunnerPath);
+
+	const [owner, repo] = selectedRepo.split('/');
+
+	if (!owner || !repo) {
+		throw error('Invalid repository name. Please select a valid repository.');
+	}
+
+	const octokit = await authenticateWithGitHub(token);
+
+	const { data: runnerTokenData } = await octokit.actions.createRegistrationTokenForRepo({
+		owner,
+		repo,
+	});
+
+	const scriptFile = getOsName() === 'win' ? 'config.cmd' : 'config.sh';
+	const configScript = `${scriptFile} --url https://github.com/${selectedRepo} --token ${runnerTokenData.token} --name ${runnerName} --labels ${runnerLabels} --ephemeral --unattended`;
+	const startScript = getOsName() === 'win' ? 'run.cmd' : 'run.sh';
+
+	exec(`${configScript} && ${startScript}`, { cwd: repoRunnerPath }, (err, stdout, stderr) => {
+		if (err) {
+			error(err.message);
+			return;
+		}
 	});
 };

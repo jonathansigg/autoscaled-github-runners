@@ -1,4 +1,4 @@
-import { copy } from 'fs-extra';
+import fs from 'fs-extra';
 import { makeDirectory } from 'make-dir';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
@@ -21,7 +21,7 @@ export const copyDir = async (srcDir: string, destDir: string) => {
 		throw new Error(`Source directory does not exist: ${srcPath}`);
 	}
 
-	copy(srcPath, destPath, { overwrite: true }, (err) => {
+	fs.copy(srcPath, destPath, { overwrite: true }, (err) => {
 		if (err) throw new Error(`Error moving directory: ${err.message}`);
 	});
 };
@@ -39,4 +39,11 @@ export const getArchName = () => {
 	if (arch === 'x64') return 'x64';
 	if (arch === 'arm64') return 'arm64';
 	throw new Error(`Unsupported arch: ${arch}`);
+};
+
+export const removeDir = async (dirPath: string) => {
+	const path = normalize(dirPath);
+	if (existsSync(path)) {
+		await fs.rm(path, { recursive: true, force: true });
+	}
 };

@@ -10,9 +10,11 @@ export const loadSetupCommands = (program: Command) => {
 	program
 		.command('setup')
 		.description('Setup the application')
-		.option('--skip-config, -s', 'Skip configuration')
+		.option('--skip-config, -s <skipConfig>', 'Skip configuration')
 		.option('--runner-path, -p <path>', 'Path to the runners')
 		.option('--token, -t <token>', 'GitHub personal access token')
+		.option('--max-runners, -m <maxRunners>', 'Maximum number of runners')
+		.option('--runner-version, -v <runnerVersion>', 'Runner version')
 		.action(async (options) => {
 			const config = getConfig(program);
 
@@ -20,8 +22,13 @@ export const loadSetupCommands = (program: Command) => {
 			const defaults = {
 				runnerPath: options?.runnerPath ?? config.runnerPath ?? `${path.resolve()}/runners`,
 				token: options?.token ?? config.token,
-				maxRunners: config.maxRunners ?? config.maxRunners ?? 8,
+				maxRunners: options.maxRunners ?? config.maxRunners ?? 8,
+				runnerVersion: options?.runnerVersion ?? config.runnerVersion,
 			};
+
+			if (!defaults.runnerVersion) {
+				defaults.runnerVersion = await getLatestRunnerVersion();
+			}
 
 			message('Welcome to autoscaled runner setup!');
 			info('This will help you configure the application.');
@@ -75,6 +82,19 @@ export const loadSetupCommands = (program: Command) => {
 					await saveConfig('maxRunners', maxRunners);
 				}
 
+				if (!options?.runnerVersion) {
+					const runnerVersion = await input({
+						message: 'Enter the runner version',
+						default: defaults.runnerVersion,
+					});
+
+					if (!runnerVersion) {
+						throw error('Runner version is required. Please provide it.');
+					}
+
+					await saveConfig('runnerVersion', runnerVersion);
+				}
+
 				if (options) {
 					breakLine();
 				}
@@ -82,11 +102,10 @@ export const loadSetupCommands = (program: Command) => {
 
 			const spinner = createSpinner('Download runner from github').start();
 			message('\n');
-			const runnerVersion = config?.runnerVersion ?? (await getLatestRunnerVersion());
 			spinner.stop();
 
 			try {
-				await downloadRunner(runnerVersion, `${runnerPath}/downloads`);
+				await downloadRunner(config?.runnerVersion, `${runnerPath}/downloads`);
 			} catch (err) {
 				spinner.stop();
 				throw error(err instanceof Error ? err.message : 'An unknown error occurred.');

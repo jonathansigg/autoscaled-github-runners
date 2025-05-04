@@ -10,6 +10,7 @@
 //  \______/ \__|  \__|      \__|  \__| \______/ \__|  \__|\__|  \__|\________|\__|  \__|
 
 import { Command } from 'commander';
+import { loadCronCommands } from './commands/cron.js';
 import { loadRunnerCommands } from './commands/runner.js';
 import { loadSetupCommands } from './commands/setup.js';
 import { loadConfig } from './helper/config.js';
@@ -23,6 +24,7 @@ loadConfig().then((config) => {
 
 	loadSetupCommands(program);
 	loadRunnerCommands(program);
+	loadCronCommands(program);
 
 	program.parse(process.argv);
 });

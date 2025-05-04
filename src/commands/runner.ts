@@ -1,35 +1,30 @@
-import { input, select } from '@inquirer/prompts';
 import type { Command } from 'commander';
 import { createSpinner } from 'nanospinner';
-import { exec } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { normalize } from 'node:path';
 import { getConfig, saveConfig } from '../helper/config.js';
 import {
-	authenticateWithGitHub,
 	downloadRunner,
 	getLatestRunnerVersion,
 	selectRepo,
+	startRunner,
 } from '../helper/github.js';
-import { error, message } from '../helper/message.js';
-import { checkAndCreateDir, copyDir, getArchName, getOsName } from '../helper/utils.js';
+import { error } from '../helper/message.js';
+import { checkAndCreateDir } from '../helper/utils.js';
 
 export const loadRunnerCommands = (program: Command) => {
 	program
 		.command('add')
 		.description('Create a new runner')
-		.option('--repo, -r <repo>', 'Repository name')
-		.option('--name, -n <name>', 'Name of the runner')
-		.option('--labels, -l <labels>', 'Labels of the runner')
-		.action(async (options) => {
+		.action(async () => {
 			const config = getConfig(program);
-			const { runnerPath, token, repos } = config;
+			const { runnerPath, token } = config;
 
 			const runnerVersion = config?.runnerVersion ?? (await getLatestRunnerVersion());
 			const selectedRepo = await selectRepo({ token });
 			const repoRunnerPath = normalize(`${runnerPath}/${selectedRepo}`);
 			const runnerDownloadPath = normalize(`${runnerPath}/downloads`);
-			const runnerDownloadDir = normalize(`${runnerDownloadPath}/runner-v${runnerVersion}`);
+
 			await checkAndCreateDir(repoRunnerPath);
 
 			const spinner = createSpinner().start();
@@ -45,65 +40,6 @@ export const loadRunnerCommands = (program: Command) => {
 				}
 			}
 
-			spinner.update('Copy runner files');
-			copyDir(runnerDownloadDir, repoRunnerPath);
-			spinner.success('Runner files extracted successfully.');
-			spinner.stop();
-
-			const [owner, repo] = selectedRepo.split('/');
-
-			if (!owner || !repo) {
-				throw error('Invalid repository name. Please select a valid repository.');
-			}
-
-			const octokit = await authenticateWithGitHub(token);
-
-			const { data: runnerTokenData } = await octokit.actions.createRegistrationTokenForRepo({
-				owner,
-				repo,
-			});
-
-			const runnerName =
-				options.name ??
-				(await input({
-					message: 'Enter the name of the runner',
-					default: `${getOsName()}-${getArchName()}`,
-					validate: (input) => {
-						if (input.length < 1) {
-							return 'Runner name cannot be empty.';
-						}
-						if (input.includes(' ')) {
-							return 'Runner name cannot contain spaces.';
-						}
-						return true;
-					},
-				}));
-
-			const runnerLabels =
-				options.labels ??
-				(await input({
-					message: 'Enter the labels of the runner',
-					default: `${getOsName()}-${getArchName()}`,
-					validate: (input) => {
-						if (input.length < 1) {
-							return 'Runner labels cannot be empty.';
-						}
-						if (input.includes(' ')) {
-							return 'Runner labels cannot contain spaces.';
-						}
-						return true;
-					},
-				}));
-
-			const scriptFile = getOsName() === 'win' ? 'config.cmd' : 'config.sh';
-			const configScript = `${scriptFile} --url https://github.com/${selectedRepo} --token ${runnerTokenData.token} --name ${runnerName} --labels ${runnerLabels} --ephemeral --unattended`;
-			exec(configScript, { cwd: repoRunnerPath }, (err, stdout, stderr) => {
-				if (err) {
-					error(err.message);
-					return;
-				}
-			});
-
 			await saveConfig('repos', [selectedRepo]);
 		});
 
@@ -111,30 +47,10 @@ export const loadRunnerCommands = (program: Command) => {
 		.command('start')
 		.description('Start the runner')
 		.option('--repo, -r <repo>', 'Repository name')
+		.option('--name, -n <name>', 'Runner name')
+		.option('--labels, -l <labels>', 'Runner labels')
 		.action(async (options) => {
 			const config = getConfig(program);
-			const { runnerPath, repos } = config;
-
-			const selectedRepo =
-				options?.repo ??
-				(await select({
-					message: 'Select a repository to start a runner',
-					pageSize: 10,
-					choices: repos.map((repo) => ({
-						name: repo,
-						value: repo,
-					})),
-				}));
-
-			const repoRunnerPath = `${runnerPath}/${selectedRepo}`;
-			const startScript = getOsName() === 'win' ? 'run.cmd' : 'run.sh';
-			exec(startScript, { cwd: repoRunnerPath }, (err, stdout, stderr) => {
-				if (err) {
-					error(err.message);
-					return;
-				}
-
-				message(stdout);
-			});
+			await startRunner(config, options);
 		});
 };
