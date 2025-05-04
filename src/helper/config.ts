@@ -1,7 +1,8 @@
+import type { Command } from 'commander';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Config, ConfigKeys } from '../types/config.js';
+import type { Config, ConfigKeys, ConfigRequired, ConfigSetOptions } from '../types/config.js';
 import { error, success } from './message.js';
 import { checkAndCreateDir } from './utils.js';
 
@@ -21,9 +22,20 @@ export const loadConfig = async (): Promise<Config> => {
 };
 
 // Save config back to file
-export const saveConfig = async <K extends keyof Config>(key: K, value: Config[K]) => {
+export const saveConfig = async <K extends keyof Config>(
+	key: K,
+	value: Config[K],
+	options?: ConfigSetOptions,
+) => {
 	const config = await loadConfig();
-	config[key] = value;
+
+	if (Array.isArray(config[key]) && Array.isArray(value) && !options?.overwrite) {
+		const newValue = value.filter((v) => !config[key]?.includes(v));
+		config[key].push(...newValue);
+	} else {
+		config[key] = value;
+	}
+
 	try {
 		fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 		success(`New config saved: ${key} = ${value}`);
@@ -42,4 +54,26 @@ export const deleteConfig = async (key: ConfigKeys) => {
 	} catch {
 		error(`Failed to delete config: ${key}`);
 	}
+};
+
+export const checkConfig = (config: Config, check?: ConfigKeys[]) => {
+	const { runnerPath, token } = config;
+
+	if (!runnerPath && (!check?.length || check?.includes('runnerPath'))) {
+		throw error(
+			'Runner path is not set. Please run setup command first. Please run `gh-runner setup` to set it up.',
+		);
+	}
+
+	if (!token && (!check?.length || check?.includes('token'))) {
+		throw error(
+			'GitHub personal access token is not set. Please run setup command first. Please run `gh-runner setup` to set it up.',
+		);
+	}
+};
+
+export const getConfig = (program: Command, keys?: ConfigKeys[]): ConfigRequired => {
+	const config = program.getOptionValue('config') as Config;
+	checkConfig(config, keys);
+	return config as ConfigRequired;
 };

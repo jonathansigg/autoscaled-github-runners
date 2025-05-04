@@ -1,53 +1,52 @@
-import { select } from '@inquirer/prompts';
+import { input, select } from '@inquirer/prompts';
 import type { Command } from 'commander';
 import { createSpinner } from 'nanospinner';
+import { exec } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { normalize } from 'node:path';
+import { getConfig, saveConfig } from '../helper/config.js';
 import {
 	authenticateWithGitHub,
 	downloadRunner,
 	getLatestRunnerVersion,
 } from '../helper/github.js';
-import { error } from '../helper/message.js';
-import { checkAndCreateDir, copyDir } from '../helper/utils.js';
-import type { Config } from '../types/config.js';
+import { error, message } from '../helper/message.js';
+import { checkAndCreateDir, copyDir, getArchName, getOsName } from '../helper/utils.js';
 
 export const loadRunnerCommands = (program: Command) => {
 	program
-		.command('runner')
-		.description('Manage runners')
-		.argument('[add]', 'Create a new runner')
-		.argument('[delete]', 'Delete a runner')
-		.action(async (add, remove, options) => {
-			const config = program.getOptionValue('config') as Config;
+		.command('add')
+		.description('Create a new runner')
+		.option('--name, -n <name>', 'Name of the runner')
+		.option('--labels, -l <labels>', 'Labels of the runner')
+		.action(async (options) => {
+			const config = getConfig(program);
 			const { runnerPath, token } = config;
 
-			if (!runnerPath) {
-				throw error(
-					'Runner path is not set. Please run setup command first. Please run `gh-runner setup` to set it up.',
-				);
-			}
+			const runnerVersion = config?.runnerVersion ?? (await getLatestRunnerVersion());
+			await addRunner(runnerPath, token, runnerVersion, options);
+		});
 
-			if (!token) {
-				throw error(
-					'GitHub personal access token is not set. Please run setup command first. Please run `gh-runner setup` to set it up.',
-				);
-			}
+	program
+		.command('start')
+		.description('Start the runner')
+		.option('--repo, -r <repo>', 'Repository name')
+		.action(async (options) => {
+			const config = getConfig(program);
+			const { runnerPath, repos } = config;
 
-			if (add) {
-				const runnerVersion = config?.runnerVersion ?? (await getLatestRunnerVersion());
-				await addRunner(runnerPath, token, runnerVersion);
-			}
+			startRunner(runnerPath, repos, options);
 		});
 };
 
-const addRunner = async (runnerPath: string, token: string, runnerVersion: string) => {
-	let spinner = createSpinner('Fetching repositories').start();
+const selectRepo = async (token: string) => {
+	const spinner = createSpinner('Fetching repositories').start();
 	const octokit = await authenticateWithGitHub(token);
 	const { data } = await octokit.repos.listForAuthenticatedUser();
 
 	spinner.stop();
 
-	const selectedRepo = await select({
+	return select({
 		message: 'Select a repository to add a runner',
 		pageSize: 10,
 		choices: data.map((repo) => ({
@@ -55,13 +54,45 @@ const addRunner = async (runnerPath: string, token: string, runnerVersion: strin
 			value: repo.full_name,
 		})),
 	});
+};
 
-	const repoRunnerPath = `${runnerPath}/${selectedRepo}/runner`;
-	const runnerDownloadPath = `${runnerPath}/downloads`;
-	const runnerDownloadDir = `${runnerDownloadPath}/runner-v${runnerVersion}`;
+const startRunner = async (runnerPath: string, repos: string[], options: { repo: string }) => {
+	const selectedRepo =
+		options?.repo ??
+		(await select({
+			message: 'Select a repository to start a runner',
+			pageSize: 10,
+			choices: repos.map((repo) => ({
+				name: repo,
+				value: repo,
+			})),
+		}));
+
+	const repoRunnerPath = `${runnerPath}/${selectedRepo}`;
+	const startScript = getOsName() === 'win' ? 'run.cmd' : 'run.sh';
+	exec(startScript, { cwd: repoRunnerPath }, (err, stdout, stderr) => {
+		if (err) {
+			error(err.message);
+			return;
+		}
+
+		message(stdout);
+	});
+};
+
+const addRunner = async (
+	runnerPath: string,
+	token: string,
+	runnerVersion: string,
+	options: { name?: string; runnergroup?: string; labels?: string },
+) => {
+	const selectedRepo = await selectRepo(token);
+	const repoRunnerPath = normalize(`${runnerPath}/${selectedRepo}`);
+	const runnerDownloadPath = normalize(`${runnerPath}/downloads`);
+	const runnerDownloadDir = normalize(`${runnerDownloadPath}/runner-v${runnerVersion}`);
 	await checkAndCreateDir(repoRunnerPath);
 
-	spinner = createSpinner('').start();
+	const spinner = createSpinner().start();
 	if (!existsSync(repoRunnerPath)) {
 		spinner.update(`Downloading GitHub Actions Runner version ${runnerVersion}`);
 
@@ -75,9 +106,85 @@ const addRunner = async (runnerPath: string, token: string, runnerVersion: strin
 	}
 
 	spinner.update('Copy runner files');
-	console.log(runnerDownloadDir);
-	console.log(repoRunnerPath);
 	copyDir(runnerDownloadDir, repoRunnerPath);
-
 	spinner.success('Runner files extracted successfully.');
+	spinner.stop();
+
+	const [owner, repo] = selectedRepo.split('/');
+
+	if (!owner || !repo) {
+		throw error('Invalid repository name. Please select a valid repository.');
+	}
+
+	const octokit = await authenticateWithGitHub(token);
+	// const { data } = await octokit.repos.get({ owner, repo });
+	// const isOrg = data.owner.type === 'Organization';
+
+	// const runnerToken = isOrg
+	// 	? await octokit.actions.createRegistrationTokenForOrg({ org: owner }) //./config.cmd --url https://github.com/admin-poker --token ADM4I4SQTN6BEXTCC3IEVWTIC4ZHW
+	// 	: await octokit.actions.createRegistrationTokenForRepo({ owner, repo });
+
+	const { data: runnerTokenData } = await octokit.actions.createRegistrationTokenForRepo({
+		owner,
+		repo,
+	});
+
+	const runnerName =
+		options.name ??
+		(await input({
+			message: 'Enter the name of the runner',
+			default: `${getOsName()}-${getArchName()}`,
+			validate: (input) => {
+				if (input.length < 1) {
+					return 'Runner name cannot be empty.';
+				}
+				if (input.includes(' ')) {
+					return 'Runner name cannot contain spaces.';
+				}
+				return true;
+			},
+		}));
+
+	const runnerLabels =
+		options.labels ??
+		(await input({
+			message: 'Enter the labels of the runner',
+			default: `${getOsName()}-${getArchName()}`,
+			validate: (input) => {
+				if (input.length < 1) {
+					return 'Runner labels cannot be empty.';
+				}
+				if (input.includes(' ')) {
+					return 'Runner labels cannot contain spaces.';
+				}
+				return true;
+			},
+		}));
+
+	// const runnerGroup =
+	// 	options.runnergroup ??
+	// 	(await input({
+	// 		message: 'Enter the runnergroup of the runner',
+	// 		default: `${getOsName()}-${owner}`,
+	// 		validate: (input) => {
+	// 			if (input.length < 1) {
+	// 				return 'Runner runnergroup cannot be empty.';
+	// 			}
+	// 			if (input.includes(' ')) {
+	// 				return 'Runner runnergroup cannot contain spaces.';
+	// 			}
+	// 			return true;
+	// 		},
+	// 	}));
+
+	const scriptFile = getOsName() === 'win' ? 'config.cmd' : 'config.sh';
+	const configScript = `${scriptFile} --url https://github.com/${selectedRepo} --token ${runnerTokenData.token} --name ${runnerName} --labels ${runnerLabels} --ephemeral --unattended`;
+	exec(configScript, { cwd: repoRunnerPath }, (err, stdout, stderr) => {
+		if (err) {
+			error(err.message);
+			return;
+		}
+	});
+
+	await saveConfig('repos', [selectedRepo]);
 };

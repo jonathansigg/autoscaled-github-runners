@@ -2,10 +2,9 @@ import { input } from '@inquirer/prompts';
 import type { Command } from 'commander';
 import { createSpinner } from 'nanospinner';
 import path from 'node:path';
-import { saveConfig } from '../helper/config.js';
+import { getConfig, saveConfig } from '../helper/config.js';
 import { downloadRunner, getLatestRunnerVersion } from '../helper/github.js';
 import { breakLine, error, info, message } from '../helper/message.js';
-import type { Config } from '../types/config.js';
 
 export const loadSetupCommands = (program: Command) => {
 	program
@@ -15,7 +14,7 @@ export const loadSetupCommands = (program: Command) => {
 		.option('--runner-path, -p <path>', 'Path to the runners')
 		.option('--token, -t <token>', 'GitHub personal access token')
 		.action(async (options) => {
-			const config = program.getOptionValue('config') as Config;
+			const config = getConfig(program);
 
 			// set default values
 			const defaults = {
