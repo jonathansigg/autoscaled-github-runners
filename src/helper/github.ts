@@ -1,10 +1,14 @@
+import { confirm } from '@inquirer/prompts';
 import { Octokit } from '@octokit/rest';
+import AdmZip from 'adm-zip';
 import axios from 'axios';
+import fs from 'fs-extra';
 import fetch from 'node-fetch';
 import { mkdirSync } from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { x } from 'tar';
-import { checkAndCreateDir } from './utils.js';
+import { checkAndCreateDir, getArchName, getOsName } from './utils.js';
 
 const fallbackVersion = '2.316.0'; // Fallback version if latest version cannot be fetched
 
@@ -30,18 +34,9 @@ export const getLatestRunnerVersion = async (): Promise<string> => {
 
 export const getDownloadUrl = (version: string): string => {
 	const platform = os.platform();
-	const arch = os.arch();
 
-	let osName: string;
-	if (platform === 'linux') osName = 'linux';
-	else if (platform === 'darwin') osName = 'osx';
-	else if (platform === 'win32') osName = 'win';
-	else throw new Error(`Unsupported platform: ${platform}`);
-
-	let archName: string;
-	if (arch === 'x64') archName = 'x64';
-	else if (arch === 'arm64') archName = 'arm64';
-	else throw new Error(`Unsupported arch: ${arch}`);
+	const osName = getOsName();
+	const archName = getArchName();
 
 	const fileExt = osName === 'win' ? 'zip' : 'tar.gz';
 	const file = `actions-runner-${osName}-${archName}-${version}.${fileExt}`;
@@ -54,15 +49,39 @@ export const downloadRunner = async (
 	version: string,
 	dest: string,
 ): Promise<{ download: boolean }> => {
-	const extractDir = `${dest}/runner-v${version}`;
+	const extractDir = path.join(dest, `runner-v${version}`);
 	const url = getDownloadUrl(version);
 	const exists = await checkAndCreateDir(extractDir);
 
 	if (exists) {
-		return new Promise((resolve) => resolve({ download: false }));
-	}
+		const confirmDownload = await confirm({
+			message: `Runner v${version} already exists. Do you want to download the runner again?`,
+			default: true,
+		});
 
+		if (!confirmDownload) {
+			return new Promise((resolve) => resolve({ download: false }));
+		}
+
+		fs.removeSync(extractDir);
+	}
 	mkdirSync(extractDir, { recursive: true });
+
+	if (getOsName() === 'win') {
+		try {
+			const res = await axios.get(url, {
+				headers: {
+					'Content-Type': 'application/zip',
+				},
+				responseType: 'arraybuffer',
+			});
+			const zip = new AdmZip(res.data);
+			zip.extractAllTo(extractDir, true);
+		} catch (e) {
+			console.log(e);
+		}
+		return new Promise((resolve) => resolve({ download: true }));
+	}
 
 	const response = await axios({
 		method: 'get',
@@ -74,7 +93,7 @@ export const downloadRunner = async (
 		response.data
 			.pipe(x({ cwd: extractDir }))
 			.on('finish', () => {
-				resolve({ download: false });
+				resolve({ download: true });
 			})
 			.on('error', (err: unknown) => {
 				reject(err);

@@ -69,7 +69,6 @@ export const loadSetupCommands = (program: Command) => {
 
 			try {
 				await downloadRunner(runnerVersion, `${runnerPath}/downloads`);
-				// spinner.success('Runner downloaded successfully.');
 			} catch (err) {
 				spinner.stop();
 				throw error(err instanceof Error ? err.message : 'An unknown error occurred.');
