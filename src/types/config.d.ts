@@ -3,6 +3,7 @@ export type Config = {
 	runnerPath?: string;
 	runnerVersion?: string;
 	repos?: string[];
+	maxRunners?: number;
 };
 
 export type ConfigSetOptions = {

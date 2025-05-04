@@ -30,7 +30,7 @@ export const saveConfig = async <K extends keyof Config>(
 	const config = await loadConfig();
 
 	if (Array.isArray(config[key]) && Array.isArray(value) && !options?.overwrite) {
-		const newValue = value.filter((v) => !config[key]?.includes(v));
+		const newValue = value.filter((v) => !config[key]?.toString()?.includes(v));
 		config[key].push(...newValue);
 	} else {
 		config[key] = value;
@@ -38,7 +38,6 @@ export const saveConfig = async <K extends keyof Config>(
 
 	try {
 		fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-		success(`New config saved: ${key} = ${value}`);
 	} catch (e) {
 		error(`Failed to save config: ${key} = ${value}`);
 	}

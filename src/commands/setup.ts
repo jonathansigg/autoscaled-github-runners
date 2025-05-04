@@ -1,4 +1,4 @@
-import { input } from '@inquirer/prompts';
+import { input, number } from '@inquirer/prompts';
 import type { Command } from 'commander';
 import { createSpinner } from 'nanospinner';
 import path from 'node:path';
@@ -20,6 +20,7 @@ export const loadSetupCommands = (program: Command) => {
 			const defaults = {
 				runnerPath: options?.runnerPath ?? config.runnerPath ?? `${path.resolve()}/runners`,
 				token: options?.token ?? config.token,
+				maxRunners: config.maxRunners ?? config.maxRunners ?? 8,
 			};
 
 			message('Welcome to autoscaled runner setup!');
@@ -56,7 +57,25 @@ export const loadSetupCommands = (program: Command) => {
 					await saveConfig('runnerPath', runnerPath);
 				}
 
-				if (options?.runnerPath || options?.token) {
+				if (!options?.maxRunners) {
+					const maxRunners = await number({
+						message: 'Enter the maximum number of runners',
+						default: defaults.maxRunners,
+						validate: (value) => {
+							if (value === undefined) {
+								return 'Maximum number of runners is required. Please provide it.';
+							}
+							if (value < 1) {
+								return 'Number of runners must be at least 1.';
+							}
+							return true;
+						},
+					});
+
+					await saveConfig('maxRunners', maxRunners);
+				}
+
+				if (options) {
 					breakLine();
 				}
 			}

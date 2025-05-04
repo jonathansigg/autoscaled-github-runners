@@ -1,8 +1,9 @@
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import { Octokit } from '@octokit/rest';
 import AdmZip from 'adm-zip';
 import axios from 'axios';
 import fs from 'fs-extra';
+import { createSpinner } from 'nanospinner';
 import fetch from 'node-fetch';
 import { mkdirSync } from 'node:fs';
 import os from 'node:os';
@@ -98,5 +99,26 @@ export const downloadRunner = async (
 			.on('error', (err: unknown) => {
 				reject(err);
 			});
+	});
+};
+
+export const selectRepo = async (options: { repos?: string[]; token?: string }) => {
+	let repos = options?.repos?.length ? options?.repos : [];
+
+	if (!options?.repos && options?.token) {
+		const spinner = createSpinner('Fetching repositories').start();
+		const octokit = await authenticateWithGitHub(options.token);
+		const { data } = await octokit.repos.listForAuthenticatedUser();
+		repos = data.map((repo) => repo.full_name);
+		spinner.stop();
+	}
+
+	return select({
+		message: 'Select a repository to add a runner',
+		pageSize: 10,
+		choices: repos.map((repo) => ({
+			name: repo,
+			value: repo,
+		})),
 	});
 };
